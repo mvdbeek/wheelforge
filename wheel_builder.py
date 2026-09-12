@@ -31,7 +31,7 @@ if __name__ == "__main__":
     is_package_pure = meta.get("purepy", False)
     run_in_sdist = meta.get("run_in_sdist", False)
     run_in_sdist_before = meta.get("run_in_sdist_before", [])
-    cibuildwheel_version = meta.get("cibuildwheel_version")
+    cibuildwheel_version = meta.get("cibuildwheel_version", "")
 
     # Find the sdist url using the PyPI warehouse API https://warehouse.pypa.io/api-reference/json.html
     pypi_url = f"https://pypi.org/pypi/{package_name}/{package_version}/json"
@@ -85,12 +85,10 @@ if __name__ == "__main__":
         if is_package_pure:
             commands.append(f"python3 -m build --wheel --outdir '{wheelhouse}' '{extracted_sdist_dir}'")
         else:
-            if cibuildwheel_version:
-                # Run the requested cibuildwheel version in an isolated environment, e.g. to
-                # build wheels for a Python version not supported by the latest cibuildwheel
-                cibuildwheel = f"pipx run --spec 'cibuildwheel{cibuildwheel_version}' cibuildwheel"
-            else:
-                cibuildwheel = "cibuildwheel"
+            # Run cibuildwheel in an isolated environment, so that a recipe can request a
+            # specific version, e.g. to build wheels for a Python version not supported by
+            # the latest cibuildwheel
+            cibuildwheel = f"uv tool run --quiet --from 'cibuildwheel{cibuildwheel_version}' cibuildwheel"
             check_commands = commands.copy()
             # Pass the package to the check command too, otherwise cibuildwheel would
             # read the requires-python of this repository's pyproject.toml instead
@@ -106,17 +104,17 @@ if __name__ == "__main__":
         # Run builder check commands
         if check_commands:
             try:
-                # Keep stderr separate, since e.g. pipx logs there while installing
                 check_cp = subprocess.run(
                     joined_check_command,
                     shell=True,
                     check=True,
                     text=True,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
                 )
             except subprocess.CalledProcessError as exc:
-                raise Exception(f"Build platform check command failed: {exc.stdout}{exc.stderr}")
-            if not check_cp.stdout.strip():
+                raise Exception(f"Build platform check command failed: {exc.stdout}")
+            if not check_cp.stdout:
                 print("No platforms to build for on this builder, exiting...")
                 sys.exit(0)
 
